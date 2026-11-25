@@ -14,6 +14,10 @@ from typing import Any, Dict, List, Optional
 import tkinter as tk
 from tkinter import messagebox
 
+# ==========================================
+# Detección de la fuente del S.O.
+FUENTE_BASE = "TkDefaultFont"
+
 
 # ==========================================
 # 1. Configuración del Sistema de Logs
@@ -60,7 +64,7 @@ class InvalidPasswordError(PasswordHunterError):
 
 
 class GameOverError(PasswordHunterError):
-    """Se lanza cuando el jugador acumula 3 cofres malditos y pierde sus vidas."""
+    """Se lanza cuando el jugador acumula 5 cofres malditos y pierde sus vidas."""
 
 
 # ==========================================
@@ -321,50 +325,63 @@ def create_chest_for_password(password: Password, is_valid: bool) -> Chest:
     else:
         return LegendaryChest()
 
-    # ==========================================
+# ==========================================
 # 6. Clase HunterGame (Lógica y Estado del Juego)
 # ==========================================
 
 class HunterGame(GameEntity):
     """Administra el jugador, el puntaje acumulado, las vidas y el flujo de rondas."""
 
-    MAX_LIVES = 3
+    MAX_LIVES = 5
 
-    def __init__(self, player_name: str) -> None:
-        """Inicializa una nueva partida para el jugador indicado.
+    def __init__(self, player_name: str, lives_mode: bool = True) -> None:
+        """Inicializa una nueva partida para el jugador en el modo elegido.
 
         Args:
             player_name: Nombre o nickname del jugador.
+            lives_mode: True para jugar con 5 vidas; False para juego libre ilimitado.
 
         Raises:
             PasswordHunterError: Si el nickname está vacío o es inválido.
         """
         clean_name = self._validate_player_name(player_name)
         super().__init__(clean_name)
+        self._lives_mode: bool = lives_mode
         self._score: int = 0
-        self._lives: int = self.MAX_LIVES
+        self._lives: int = self.MAX_LIVES if lives_mode else 0
         self._cursed_count: int = 0
         self._rounds_played: int = 0
         self._history: List[Dict[str, Any]] = []
         self._last_round: Optional[Dict[str, Any]] = None
-        GAME_LOGGER.info("Nueva partida iniciada para el jugador: %s", self.name)
+        mode_label = "Lives Mode (5)" if lives_mode else "Free Mode (Unlimited)"
+        GAME_LOGGER.info(
+            "Nueva partida iniciada para %s | Modo: %s", self.name, mode_label
+        )
 
     def _validate_player_name(self, player_name: str) -> str:
         """Valida que el nombre o nickname del jugador no esté vacío.
+
+        Args:
+            player_name: Texto ingresado por el usuario.
 
         Returns:
             Nickname limpio de espacios en los extremos.
 
         Raises:
-            PasswordHunterError: Si el nombre tiene menos de 3 caracteres.
+            PasswordHunterError: Si el nombre tiene menos de 2 caracteres.
         """
         clean_name = str(player_name).strip()
-        if len(clean_name) < 3:
+        if len(clean_name) < 2:
             GAME_LOGGER.warning("Nickname inválido ingresado: '%s'", player_name)
             raise PasswordHunterError(
-                "Player nickname must have at least 3 characters."
+                "Player nickname must have at least 2 characters."
             )
         return clean_name
+
+    @property
+    def lives_mode(self) -> bool:
+        """Indica si la partida actual tiene límite de 5 vidas (True) o es libre (False)."""
+        return self._lives_mode
 
     @property
     def score(self) -> int:
@@ -373,7 +390,7 @@ class HunterGame(GameEntity):
 
     @property
     def lives(self) -> int:
-        """Devuelve la cantidad de vidas restantes (0 a 3)."""
+        """Devuelve la cantidad de vidas restantes (0 a 5 en modo vidas)."""
         return self._lives
 
     @property
@@ -388,8 +405,8 @@ class HunterGame(GameEntity):
 
     @property
     def is_game_over(self) -> bool:
-        """Indica si el jugador perdió todas sus vidas (3 cofres malditos)."""
-        return self._lives <= 0
+        """Indica si el jugador perdió sus 5 vidas (solo aplica en modo vidas)."""
+        return self._lives_mode and self._lives <= 0
 
     @property
     def last_round(self) -> Optional[Dict[str, Any]]:
@@ -411,12 +428,12 @@ class HunterGame(GameEntity):
             Diccionario con los resultados de la ronda para mostrar en pantalla.
 
         Raises:
-            GameOverError: Si la partida ya terminó o termina en esta ronda.
+            GameOverError: Si la partida está en modo vidas y se agotan las 5 vidas.
             InvalidLengthError: Si la longitud ingresada no es válida (no resta vidas).
         """
         if self.is_game_over:
             raise GameOverError(
-                "Game Over! You have no lives left. Please start a new game."
+                "Game Over! You have no lives left. Please reset or start a new game."
             )
 
         # 1. Crear y generar la contraseña (puede lanzar InvalidLengthError)
@@ -441,13 +458,14 @@ class HunterGame(GameEntity):
         chest = create_chest_for_password(password, is_valid)
         chest_message = chest.open_chest()
 
-        # 4. Actualizar puntaje, rondas y vidas según el tipo de cofre
+        # 4. Actualizar puntaje, rondas y vidas (solo si el modo vidas está activo)
         self._rounds_played += 1
         self._score += chest.points
 
         if chest.is_cursed:
             self._cursed_count += 1
-            self._lives -= 1
+            if self._lives_mode:
+                self._lives -= 1
 
         # 5. Guardar el resumen de la ronda en el historial interno
         round_result: Dict[str, Any] = {
@@ -460,13 +478,14 @@ class HunterGame(GameEntity):
             "points_change": chest.points,
             "chest_message": chest_message,
             "total_score": self._score,
+            "lives_mode": self._lives_mode,
             "lives_left": self._lives,
             "cursed_count": self._cursed_count,
         }
         self._last_round = round_result
         self._history.append(round_result)
 
-        # 6. Verificar si se agotaron las 3 vidas tras abrir un cofre maldito
+        # 6. Verificar si se agotaron las 5 vidas tras abrir un cofre maldito
         if self.is_game_over:
             GAME_LOGGER.error(
                 "FIN DE LA PARTIDA para %s tras acumular %d cofres malditos. Puntaje final: %d",
@@ -475,29 +494,45 @@ class HunterGame(GameEntity):
                 self._score,
             )
             raise GameOverError(
-                f"GAME OVER, {self.name}! You opened 3 Cursed Chests and lost all your lives."
+                f"GAME OVER, {self.name}! You opened {self.MAX_LIVES} Cursed Chests "
+                "and lost all your lives."
             )
 
         return round_result
 
-    def reset_game(self) -> None:
-        """Reinicia puntaje, vidas e historial manteniendo el mismo jugador."""
+    def reset_game(self, lives_mode: Optional[bool] = None) -> None:
+        """Reinicia puntaje, vidas e historial manteniendo el mismo jugador.
+
+        Args:
+            lives_mode: Si se indica, actualiza también el modo de juego (vidas o libre).
+        """
+        if lives_mode is not None:
+            self._lives_mode = lives_mode
+
         self._score = 0
-        self._lives = self.MAX_LIVES
+        self._lives = self.MAX_LIVES if self._lives_mode else 0
         self._cursed_count = 0
         self._rounds_played = 0
         self._history.clear()
         self._last_round = None
-        GAME_LOGGER.info("Partida reiniciada para el jugador: %s", self.name)
+        mode_label = "Lives Mode (5)" if self._lives_mode else "Free Mode (Unlimited)"
+        GAME_LOGGER.info(
+            "Partida reiniciada para %s | Modo: %s", self.name, mode_label
+        )
 
     def get_summary(self) -> str:
         """Devuelve el estado actual del jugador y su partida."""
+        lives_info = (
+            f"{self._lives}/{self.MAX_LIVES}"
+            if self._lives_mode
+            else "Unlimited (Free Mode)"
+        )
         return (
             f"Player: {self.name} | Score: {self._score} pts | "
-            f"Lives: {self._lives}/{self.MAX_LIVES} | Rounds: {self._rounds_played}"
+            f"Lives: {lives_info} | Rounds: {self._rounds_played}"
         )
 
-    # ==========================================
+# ==========================================
 # 7. Interfaz Gráfica (Tkinter) y Arranque
 # ==========================================
 
@@ -512,21 +547,22 @@ class HunterGameGUI:
         """
         self._root = root
         self._root.title("Password Hunter - Chest Challenge")
-        self._root.geometry("680x620")
+        self._root.geometry("710x730")
         self._root.resizable(False, False)
         self._root.configure(bg="#F0F4F8")
 
         self._game: Optional[HunterGame] = None
 
-        # Variables reactivas vinculadas a las etiquetas de la interfaz
+        # Variables reactivas vinculadas a los controles de la interfaz
+        self._mode_var = tk.StringVar(value="lives")
         self._player_var = tk.StringVar(value="Player: Not registered")
         self._score_var = tk.StringVar(value="Total Score: 0 pts")
-        self._lives_var = tk.StringVar(value="Lives: 3 / 3")
+        self._lives_var = tk.StringVar(value="Lives: 5 / 5")
         self._password_var = tk.StringVar(value="Generated Password: -")
         self._chest_var = tk.StringVar(value="Chest Obtained: -")
         self._points_var = tk.StringVar(value="Chest Points: 0 pts")
         self._status_var = tk.StringVar(
-            value="Enter your nickname and click 'Start Game' to begin."
+            value="Enter your nickname, select a game mode, and click 'Start Game'."
         )
 
         self._build_widgets()
@@ -534,43 +570,104 @@ class HunterGameGUI:
     def _build_widgets(self) -> None:
         """Construye y organiza todos los paneles y controles de la ventana."""
         # Encabezado principal
-        header_frame = tk.Frame(self._root, bg="#1B365D", pady=12)
+        header_frame = tk.Frame(self._root, bg="#1B365D", pady=10)
         header_frame.pack(fill=tk.X)
 
         tk.Label(
             header_frame,
             text="PASSWORD HUNTER: CHEST CHALLENGE",
-            font=("Arial", 15, "bold"),
+            font=(FUENTE_BASE, 15, "bold"),
             fg="white",
             bg="#1B365D",
         ).pack()
 
-        # Panel 1: Registro de Nickname del Jugador
+        # Panel Informativo: Rangos de contraseñas y reglas de cofres
+        rules_frame = tk.LabelFrame(
+            self._root,
+            text=" Chest Rules & Password Length Ranges ",
+            font=(FUENTE_BASE, 9, "bold"),
+            bg="#EBF8FF",
+            fg="#1B365D",
+            padx=12,
+            pady=6,
+        )
+        rules_frame.pack(fill=tk.X, padx=16, pady=(10, 4))
+
+        rules_text = (
+            "• Length 8-10: Common Chest (+10 pts)   |  "
+            "• Length 11-13: Rare Chest (+25 pts)  |\n"
+            "• Length 14-16: Legendary Chest (+50 pts)  |  "
+            "• Invalid Password: "
+            "Cursed Chest (-20 pts | -1 Life in Lives Mode)"
+        )
+        tk.Label(
+            rules_frame,
+            text=rules_text,
+            font=(FUENTE_BASE, 9),
+            fg="#2C5282",
+            bg="#EBF8FF",
+            justify=tk.LEFT,
+            anchor="w",
+        ).pack(fill=tk.X)
+
+        # Panel 1: Registro de Nickname y Selección de Modo de Juego
         player_frame = tk.LabelFrame(
             self._root,
-            text=" 1. Player Setup ",
-            font=("Arial", 10, "bold"),
+            text=" 1. Player Setup & Game Mode ",
+            font=(FUENTE_BASE, 10, "bold"),
             bg="#F0F4F8",
             fg="#1B365D",
             padx=12,
             pady=8,
         )
-        player_frame.pack(fill=tk.X, padx=16, pady=(12, 6))
+        player_frame.pack(fill=tk.X, padx=16, pady=6)
+
+        top_setup_row = tk.Frame(player_frame, bg="#F0F4F8")
+        top_setup_row.pack(fill=tk.X)
 
         tk.Label(
-            player_frame, text="Nickname:", font=("Arial", 10), bg="#F0F4F8"
+            top_setup_row, text="Nickname:", font=(FUENTE_BASE, 10), bg="#F0F4F8"
         ).pack(side=tk.LEFT, padx=(0, 6))
 
-        self._name_entry = tk.Entry(player_frame, font=("Arial", 10), width=25)
+        self._name_entry = tk.Entry(top_setup_row, font=(FUENTE_BASE, 10), width=24)
         self._name_entry.pack(side=tk.LEFT, padx=(0, 10))
 
         tk.Button(
-            player_frame,
+            top_setup_row,
             text="Start Game",
-            font=("Arial", 10, "bold"),
+            font=(FUENTE_BASE, 10, "bold"),
             bg="#2B6CB0",
             fg="white",
             command=self._start_new_player,
+        ).pack(side=tk.LEFT)
+
+        mode_row = tk.Frame(player_frame, bg="#F0F4F8")
+        mode_row.pack(fill=tk.X, pady=(6, 0))
+
+        tk.Label(
+            mode_row, text="Game Mode:", font=(FUENTE_BASE, 9, "bold"), bg="#F0F4F8"
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Radiobutton(
+            mode_row,
+            text="Lives Mode (5 Lives)",
+            variable=self._mode_var,
+            value="lives",
+            font=(FUENTE_BASE, 9),
+            bg="#F0F4F8",
+            activebackground="#F0F4F8",
+            command=self._on_mode_change,
+        ).pack(side=tk.LEFT, padx=(0, 14))
+
+        tk.Radiobutton(
+            mode_row,
+            text="Free Mode (Unlimited)",
+            variable=self._mode_var,
+            value="free",
+            font=(FUENTE_BASE, 9),
+            bg="#F0F4F8",
+            activebackground="#F0F4F8",
+            command=self._on_mode_change,
         ).pack(side=tk.LEFT)
 
         # Panel 2: Marcador de Jugador, Puntaje Acumulado y Vidas
@@ -582,7 +679,7 @@ class HunterGameGUI:
         tk.Label(
             stats_frame,
             textvariable=self._player_var,
-            font=("Arial", 10, "bold"),
+            font=(FUENTE_BASE, 10, "bold"),
             fg="#1B365D",
             bg="white",
         ).pack(side=tk.LEFT, expand=True)
@@ -590,7 +687,7 @@ class HunterGameGUI:
         tk.Label(
             stats_frame,
             textvariable=self._score_var,
-            font=("Arial", 11, "bold"),
+            font=(FUENTE_BASE, 11, "bold"),
             fg="#1E7E34",
             bg="white",
         ).pack(side=tk.LEFT, expand=True)
@@ -598,7 +695,7 @@ class HunterGameGUI:
         tk.Label(
             stats_frame,
             textvariable=self._lives_var,
-            font=("Arial", 11, "bold"),
+            font=(FUENTE_BASE, 11, "bold"),
             fg="#C53030",
             bg="white",
         ).pack(side=tk.LEFT, expand=True)
@@ -607,7 +704,7 @@ class HunterGameGUI:
         action_frame = tk.LabelFrame(
             self._root,
             text=" 2. Password Generator & Chest Opener ",
-            font=("Arial", 10, "bold"),
+            font=(FUENTE_BASE, 10, "bold"),
             bg="#F0F4F8",
             fg="#1B365D",
             padx=12,
@@ -618,18 +715,18 @@ class HunterGameGUI:
         tk.Label(
             action_frame,
             text="Length (8-16):",
-            font=("Arial", 10),
+            font=(FUENTE_BASE, 10),
             bg="#F0F4F8",
         ).pack(side=tk.LEFT, padx=(0, 6))
 
-        self._length_entry = tk.Entry(action_frame, font=("Arial", 10), width=6)
+        self._length_entry = tk.Entry(action_frame, font=(FUENTE_BASE, 10), width=6)
         self._length_entry.insert(0, "10")
         self._length_entry.pack(side=tk.LEFT, padx=(0, 12))
 
         self._play_button = tk.Button(
             action_frame,
             text="Generate & Open Chest",
-            font=("Arial", 10, "bold"),
+            font=(FUENTE_BASE, 10, "bold"),
             bg="#2F855A",
             fg="white",
             state=tk.DISABLED,
@@ -640,7 +737,7 @@ class HunterGameGUI:
         self._reset_button = tk.Button(
             action_frame,
             text="Reset Game",
-            font=("Arial", 10),
+            font=(FUENTE_BASE, 10),
             bg="#D69E2E",
             fg="white",
             state=tk.DISABLED,
@@ -651,7 +748,7 @@ class HunterGameGUI:
         tk.Button(
             action_frame,
             text="Quit",
-            font=("Arial", 10),
+            font=(FUENTE_BASE, 10),
             bg="#C53030",
             fg="white",
             command=self._exit_game,
@@ -661,7 +758,7 @@ class HunterGameGUI:
         result_frame = tk.LabelFrame(
             self._root,
             text=" 3. Current Chest Result ",
-            font=("Arial", 10, "bold"),
+            font=(FUENTE_BASE, 10, "bold"),
             bg="white",
             fg="#1B365D",
             padx=12,
@@ -681,7 +778,7 @@ class HunterGameGUI:
         self._chest_label = tk.Label(
             result_frame,
             textvariable=self._chest_var,
-            font=("Arial", 11, "bold"),
+            font=(FUENTE_BASE, 11, "bold"),
             fg="#1B365D",
             bg="white",
             anchor="w",
@@ -691,7 +788,7 @@ class HunterGameGUI:
         tk.Label(
             result_frame,
             textvariable=self._points_var,
-            font=("Arial", 10, "bold"),
+            font=(FUENTE_BASE, 10, "bold"),
             fg="#2B6CB0",
             bg="white",
             anchor="w",
@@ -700,10 +797,10 @@ class HunterGameGUI:
         tk.Label(
             result_frame,
             textvariable=self._status_var,
-            font=("Arial", 9, "italic"),
+            font=(FUENTE_BASE, 9, "italic"),
             fg="#4A5568",
             bg="white",
-            wraplength=610,
+            wraplength=630,
             justify=tk.LEFT,
             anchor="w",
         ).pack(fill=tk.X, pady=(4, 0))
@@ -712,7 +809,7 @@ class HunterGameGUI:
         history_frame = tk.LabelFrame(
             self._root,
             text=" 4. Round History ",
-            font=("Arial", 10, "bold"),
+            font=(FUENTE_BASE, 10, "bold"),
             bg="#F0F4F8",
             fg="#1B365D",
             padx=12,
@@ -730,18 +827,48 @@ class HunterGameGUI:
         )
         self._history_text.pack(fill=tk.BOTH, expand=True)
 
+    def _is_lives_mode_selected(self) -> bool:
+        """Devuelve True si el usuario seleccionó el modo con 5 vidas."""
+        return self._mode_var.get() == "lives"
+
+    def _format_lives_display(self) -> str:
+        """Construye el texto del marcador de vidas según el modo activo."""
+        if self._game is not None:
+            if self._game.lives_mode:
+                return f"Lives: {self._game.lives} / {HunterGame.MAX_LIVES}"
+            return "Mode: Free (Unlimited)"
+
+        return (
+            f"Lives: {HunterGame.MAX_LIVES} / {HunterGame.MAX_LIVES}"
+            if self._is_lives_mode_selected()
+            else "Mode: Free (Unlimited)"
+        )
+
+    def _on_mode_change(self) -> None:
+        """Sincroniza el marcador visual o reinicia la sesión al cambiar de modo."""
+        if self._game is None:
+            self._lives_var.set(self._format_lives_display())
+            return
+
+        new_lives_mode = self._is_lives_mode_selected()
+        if new_lives_mode != self._game.lives_mode:
+            self._reset_current_game()
+            mode_name = "Lives Mode (5 Lives)" if new_lives_mode else "Free Mode (Unlimited)"
+            self._status_var.set(f"Mode switched to {mode_name}. Game reset!")
+
     def _start_new_player(self) -> None:
-        """Crea una nueva partida con el nickname ingresado por el usuario."""
+        """Crea una nueva partida con el nickname y modo elegidos por el usuario."""
         raw_name = self._name_entry.get()
+        use_lives = self._is_lives_mode_selected()
         try:
-            self._game = HunterGame(raw_name)
+            self._game = HunterGame(raw_name, lives_mode=use_lives)
         except PasswordHunterError as error:
             messagebox.showwarning("Invalid Nickname", str(error))
             return
 
         self._player_var.set(f"Player: {self._game.name}")
         self._score_var.set(f"Total Score: {self._game.score} pts")
-        self._lives_var.set(f"Lives: {self._game.lives} / {HunterGame.MAX_LIVES}")
+        self._lives_var.set(self._format_lives_display())
         self._password_var.set("Generated Password: -")
         self._chest_var.set("Chest Obtained: -")
         self._points_var.set("Chest Points: 0 pts")
@@ -775,7 +902,7 @@ class HunterGameGUI:
         except InvalidLengthError as error:
             messagebox.showwarning("Invalid Length", str(error))
         except GameOverError as error:
-            # Actualizamos primero el último cofre maldito antes de mostrar la alerta
+            # Actualizamos primero el 5to cofre maldito antes de mostrar la alerta
             if self._game.last_round is not None:
                 self._update_round_display(self._game.last_round)
             self._play_button.config(state=tk.DISABLED)
@@ -794,9 +921,7 @@ class HunterGameGUI:
         sign = "+" if points > 0 else ""
 
         self._score_var.set(f"Total Score: {round_data['total_score']} pts")
-        self._lives_var.set(
-            f"Lives: {round_data['lives_left']} / {HunterGame.MAX_LIVES}"
-        )
+        self._lives_var.set(self._format_lives_display())
         self._password_var.set(
             f"Generated Password: {round_data['password']} (Length: {round_data['length']})"
         )
@@ -810,25 +935,30 @@ class HunterGameGUI:
         color = "#C53030" if points < 0 else "#1E7E34"
         self._chest_label.config(fg=color)
 
+        lives_log = (
+            f"Lives: {round_data['lives_left']}"
+            if round_data["lives_mode"]
+            else "Free Mode"
+        )
         self._history_text.config(state=tk.NORMAL)
         line = (
             f"Round {round_data['round_number']:02d} | "
             f"Pass: {round_data['password']} | "
             f"{round_data['chest_name']} ({sign}{points} pts) | "
-            f"Score: {round_data['total_score']} | Lives: {round_data['lives_left']}\n"
+            f"Score: {round_data['total_score']} | {lives_log}\n"
         )
         self._history_text.insert(tk.END, line)
         self._history_text.see(tk.END)
         self._history_text.config(state=tk.DISABLED)
 
     def _reset_current_game(self) -> None:
-        """Reinicia el puntaje y las 3 vidas manteniendo al jugador actual."""
+        """Reinicia el puntaje y las vidas según el modo seleccionado."""
         if self._game is None:
             return
 
-        self._game.reset_game()
+        self._game.reset_game(lives_mode=self._is_lives_mode_selected())
         self._score_var.set("Total Score: 0 pts")
-        self._lives_var.set(f"Lives: {HunterGame.MAX_LIVES} / {HunterGame.MAX_LIVES}")
+        self._lives_var.set(self._format_lives_display())
         self._password_var.set("Generated Password: -")
         self._chest_var.set("Chest Obtained: -")
         self._points_var.set("Chest Points: 0 pts")
