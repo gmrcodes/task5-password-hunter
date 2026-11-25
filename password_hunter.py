@@ -205,3 +205,115 @@ class Password(GameEntity):
     def get_summary(self) -> str:
         """Devuelve una descripción legible de la contraseña generada."""
         return f"{self.name}: '{self._value}' (Length: {self._length})"
+
+    # ==========================================
+# 5. Clases de Cofres (Herencia y Polimorfismo)
+# ==========================================
+
+class Chest(GameEntity, ABC):
+    """Clase abstracta base que representa un cofre del juego."""
+
+    def __init__(self, name: str, points: int, is_cursed: bool = False) -> None:
+        """Inicializa un cofre con su nombre, puntaje y estado de maldición.
+
+        Args:
+            name: Nombre visible del tipo de cofre.
+            points: Puntos que suma (positivo) o resta (negativo) al abrirse.
+            is_cursed: Indica si el cofre es maldito (True) o beneficioso (False).
+        """
+        super().__init__(name)
+        self._points = points
+        self._is_cursed = is_cursed
+
+    @property
+    def points(self) -> int:
+        """Devuelve el valor en puntos del cofre."""
+        return self._points
+
+    @property
+    def is_cursed(self) -> bool:
+        """Indica si el cofre resta una vida al jugador."""
+        return self._is_cursed
+
+    @abstractmethod
+    def open_chest(self) -> str:
+        """Abre el cofre y devuelve un mensaje con el resultado obtenido."""
+        pass
+
+    def get_summary(self) -> str:
+        """Devuelve un resumen general del cofre y su valor en puntos."""
+        sign = "+" if self._points > 0 else ""
+        return f"{self.name} ({sign}{self._points} pts)"
+
+
+class CommonChest(Chest):
+    """Cofre común otorgado por contraseñas válidas de longitud 8 a 10."""
+
+    def __init__(self) -> None:
+        """Configura el cofre común con +10 puntos."""
+        super().__init__(name="Common Chest", points=10, is_cursed=False)
+
+    def open_chest(self) -> str:
+        """Abre el cofre común aplicando polimorfismo."""
+        GAME_LOGGER.info("Cofre abierto: %s (+%d puntos).", self.name, self.points)
+        return f"You opened a {self.name}! You earned +{self.points} points."
+
+
+class RareChest(Chest):
+    """Cofre raro otorgado por contraseñas válidas de longitud 11 a 13."""
+
+    def __init__(self) -> None:
+        """Configura el cofre raro con +25 puntos."""
+        super().__init__(name="Rare Chest", points=25, is_cursed=False)
+
+    def open_chest(self) -> str:
+        """Abre el cofre raro aplicando polimorfismo."""
+        GAME_LOGGER.info("Cofre abierto: %s (+%d puntos).", self.name, self.points)
+        return f"Great job! You unlocked a {self.name} and earned +{self.points} points."
+
+
+class LegendaryChest(Chest):
+    """Cofre legendario otorgado por contraseñas válidas de longitud 14 a 16."""
+
+    def __init__(self) -> None:
+        """Configura el cofre legendario con +50 puntos."""
+        super().__init__(name="Legendary Chest", points=50, is_cursed=False)
+
+    def open_chest(self) -> str:
+        """Abre el cofre legendario aplicando polimorfismo."""
+        GAME_LOGGER.info("Cofre abierto: %s (+%d puntos).", self.name, self.points)
+        return f"JACKPOT! You unlocked a {self.name} and earned +{self.points} points!"
+
+
+class CursedChest(Chest):
+    """Cofre maldito otorgado cuando la contraseña generada es inválida."""
+
+    def __init__(self) -> None:
+        """Configura el cofre maldito con -20 puntos y marca de maldición."""
+        super().__init__(name="Cursed Chest", points=-20, is_cursed=True)
+
+    def open_chest(self) -> str:
+        """Abre el cofre maldito aplicando polimorfismo."""
+        GAME_LOGGER.warning("Cofre maldito activado: %s (%d puntos).", self.name, self.points)
+        return f"OH NO! It is a {self.name}! You lost {abs(self.points)} points and 1 life."
+
+
+def create_chest_for_password(password: Password, is_valid: bool) -> Chest:
+    """Selecciona y crea el cofre adecuado según la validez y longitud de la contraseña.
+
+    Args:
+        password: Instancia de Password evaluada en la ronda actual.
+        is_valid: True si la contraseña pasó todas las validaciones; False si falló.
+
+    Returns:
+        Una instancia concreta de una subclase de Chest.
+    """
+    if not is_valid:
+        return CursedChest()
+
+    if 8 <= password.length <= 10:
+        return CommonChest()
+    elif 11 <= password.length <= 13:
+        return RareChest()
+    else:
+        return LegendaryChest()
