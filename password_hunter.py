@@ -11,6 +11,8 @@ import logging
 import random
 import string
 from typing import Any, Dict, List, Optional
+import tkinter as tk
+from tkinter import messagebox
 
 
 # ==========================================
@@ -494,3 +496,363 @@ class HunterGame(GameEntity):
             f"Player: {self.name} | Score: {self._score} pts | "
             f"Lives: {self._lives}/{self.MAX_LIVES} | Rounds: {self._rounds_played}"
         )
+
+    # ==========================================
+# 7. Interfaz Gráfica (Tkinter) y Arranque
+# ==========================================
+
+class HunterGameGUI:
+    """Interfaz gráfica en inglés para interactuar con el juego Password Hunter."""
+
+    def __init__(self, root: tk.Tk) -> None:
+        """Configura la ventana principal y las variables visuales del juego.
+
+        Args:
+            root: Ventana raíz de Tkinter.
+        """
+        self._root = root
+        self._root.title("Password Hunter - Chest Challenge")
+        self._root.geometry("680x620")
+        self._root.resizable(False, False)
+        self._root.configure(bg="#F0F4F8")
+
+        self._game: Optional[HunterGame] = None
+
+        # Variables reactivas vinculadas a las etiquetas de la interfaz
+        self._player_var = tk.StringVar(value="Player: Not registered")
+        self._score_var = tk.StringVar(value="Total Score: 0 pts")
+        self._lives_var = tk.StringVar(value="Lives: 3 / 3")
+        self._password_var = tk.StringVar(value="Generated Password: -")
+        self._chest_var = tk.StringVar(value="Chest Obtained: -")
+        self._points_var = tk.StringVar(value="Chest Points: 0 pts")
+        self._status_var = tk.StringVar(
+            value="Enter your nickname and click 'Start Game' to begin."
+        )
+
+        self._build_widgets()
+
+    def _build_widgets(self) -> None:
+        """Construye y organiza todos los paneles y controles de la ventana."""
+        # Encabezado principal
+        header_frame = tk.Frame(self._root, bg="#1B365D", pady=12)
+        header_frame.pack(fill=tk.X)
+
+        tk.Label(
+            header_frame,
+            text="PASSWORD HUNTER: CHEST CHALLENGE",
+            font=("Arial", 15, "bold"),
+            fg="white",
+            bg="#1B365D",
+        ).pack()
+
+        # Panel 1: Registro de Nickname del Jugador
+        player_frame = tk.LabelFrame(
+            self._root,
+            text=" 1. Player Setup ",
+            font=("Arial", 10, "bold"),
+            bg="#F0F4F8",
+            fg="#1B365D",
+            padx=12,
+            pady=8,
+        )
+        player_frame.pack(fill=tk.X, padx=16, pady=(12, 6))
+
+        tk.Label(
+            player_frame, text="Nickname:", font=("Arial", 10), bg="#F0F4F8"
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+        self._name_entry = tk.Entry(player_frame, font=("Arial", 10), width=25)
+        self._name_entry.pack(side=tk.LEFT, padx=(0, 10))
+
+        tk.Button(
+            player_frame,
+            text="Start Game",
+            font=("Arial", 10, "bold"),
+            bg="#2B6CB0",
+            fg="white",
+            command=self._start_new_player,
+        ).pack(side=tk.LEFT)
+
+        # Panel 2: Marcador de Jugador, Puntaje Acumulado y Vidas
+        stats_frame = tk.Frame(
+            self._root, bg="white", bd=1, relief=tk.SOLID, padx=12, pady=10
+        )
+        stats_frame.pack(fill=tk.X, padx=16, pady=6)
+
+        tk.Label(
+            stats_frame,
+            textvariable=self._player_var,
+            font=("Arial", 10, "bold"),
+            fg="#1B365D",
+            bg="white",
+        ).pack(side=tk.LEFT, expand=True)
+
+        tk.Label(
+            stats_frame,
+            textvariable=self._score_var,
+            font=("Arial", 11, "bold"),
+            fg="#1E7E34",
+            bg="white",
+        ).pack(side=tk.LEFT, expand=True)
+
+        tk.Label(
+            stats_frame,
+            textvariable=self._lives_var,
+            font=("Arial", 11, "bold"),
+            fg="#C53030",
+            bg="white",
+        ).pack(side=tk.LEFT, expand=True)
+
+        # Panel 3: Controles de Ronda (Longitud y Acciones)
+        action_frame = tk.LabelFrame(
+            self._root,
+            text=" 2. Password Generator & Chest Opener ",
+            font=("Arial", 10, "bold"),
+            bg="#F0F4F8",
+            fg="#1B365D",
+            padx=12,
+            pady=10,
+        )
+        action_frame.pack(fill=tk.X, padx=16, pady=6)
+
+        tk.Label(
+            action_frame,
+            text="Length (8-16):",
+            font=("Arial", 10),
+            bg="#F0F4F8",
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+        self._length_entry = tk.Entry(action_frame, font=("Arial", 10), width=6)
+        self._length_entry.insert(0, "10")
+        self._length_entry.pack(side=tk.LEFT, padx=(0, 12))
+
+        self._play_button = tk.Button(
+            action_frame,
+            text="Generate & Open Chest",
+            font=("Arial", 10, "bold"),
+            bg="#2F855A",
+            fg="white",
+            state=tk.DISABLED,
+            command=self._play_turn,
+        )
+        self._play_button.pack(side=tk.LEFT, padx=(0, 8))
+
+        self._reset_button = tk.Button(
+            action_frame,
+            text="Reset Game",
+            font=("Arial", 10),
+            bg="#D69E2E",
+            fg="white",
+            state=tk.DISABLED,
+            command=self._reset_current_game,
+        )
+        self._reset_button.pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Button(
+            action_frame,
+            text="Quit",
+            font=("Arial", 10),
+            bg="#C53030",
+            fg="white",
+            command=self._exit_game,
+        ).pack(side=tk.RIGHT)
+
+        # Panel 4: Resultado del Cofre Actual
+        result_frame = tk.LabelFrame(
+            self._root,
+            text=" 3. Current Chest Result ",
+            font=("Arial", 10, "bold"),
+            bg="white",
+            fg="#1B365D",
+            padx=12,
+            pady=10,
+        )
+        result_frame.pack(fill=tk.X, padx=16, pady=6)
+
+        tk.Label(
+            result_frame,
+            textvariable=self._password_var,
+            font=("Consolas", 11, "bold"),
+            fg="#2D3748",
+            bg="white",
+            anchor="w",
+        ).pack(fill=tk.X, pady=2)
+
+        self._chest_label = tk.Label(
+            result_frame,
+            textvariable=self._chest_var,
+            font=("Arial", 11, "bold"),
+            fg="#1B365D",
+            bg="white",
+            anchor="w",
+        )
+        self._chest_label.pack(fill=tk.X, pady=2)
+
+        tk.Label(
+            result_frame,
+            textvariable=self._points_var,
+            font=("Arial", 10, "bold"),
+            fg="#2B6CB0",
+            bg="white",
+            anchor="w",
+        ).pack(fill=tk.X, pady=2)
+
+        tk.Label(
+            result_frame,
+            textvariable=self._status_var,
+            font=("Arial", 9, "italic"),
+            fg="#4A5568",
+            bg="white",
+            wraplength=610,
+            justify=tk.LEFT,
+            anchor="w",
+        ).pack(fill=tk.X, pady=(4, 0))
+
+        # Panel 5: Historial Visual de Rondas
+        history_frame = tk.LabelFrame(
+            self._root,
+            text=" 4. Round History ",
+            font=("Arial", 10, "bold"),
+            bg="#F0F4F8",
+            fg="#1B365D",
+            padx=12,
+            pady=8,
+        )
+        history_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=(6, 12))
+
+        self._history_text = tk.Text(
+            history_frame,
+            height=8,
+            font=("Consolas", 9),
+            bg="#EDF2F7",
+            fg="#1A202C",
+            state=tk.DISABLED,
+        )
+        self._history_text.pack(fill=tk.BOTH, expand=True)
+
+    def _start_new_player(self) -> None:
+        """Crea una nueva partida con el nickname ingresado por el usuario."""
+        raw_name = self._name_entry.get()
+        try:
+            self._game = HunterGame(raw_name)
+        except PasswordHunterError as error:
+            messagebox.showwarning("Invalid Nickname", str(error))
+            return
+
+        self._player_var.set(f"Player: {self._game.name}")
+        self._score_var.set(f"Total Score: {self._game.score} pts")
+        self._lives_var.set(f"Lives: {self._game.lives} / {HunterGame.MAX_LIVES}")
+        self._password_var.set("Generated Password: -")
+        self._chest_var.set("Chest Obtained: -")
+        self._points_var.set("Chest Points: 0 pts")
+        self._status_var.set(
+            f"Welcome {self._game.name}! Choose a length (8-16) and open a chest."
+        )
+
+        self._play_button.config(state=tk.NORMAL)
+        self._reset_button.config(state=tk.NORMAL)
+
+        self._history_text.config(state=tk.NORMAL)
+        self._history_text.delete("1.0", tk.END)
+        self._history_text.config(state=tk.DISABLED)
+
+    def _play_turn(self) -> None:
+        """Ejecuta una ronda del juego y actualiza la interfaz con el resultado."""
+        if self._game is None:
+            messagebox.showinfo("Player Required", "Please enter your nickname first.")
+            return
+
+        if self._game.is_game_over:
+            messagebox.showerror(
+                "Game Over", "You have 0 lives left. Click 'Reset Game' to play again."
+            )
+            return
+
+        raw_length = self._length_entry.get()
+        try:
+            round_data = self._game.play_round(raw_length)
+            self._update_round_display(round_data)
+        except InvalidLengthError as error:
+            messagebox.showwarning("Invalid Length", str(error))
+        except GameOverError as error:
+            # Actualizamos primero el último cofre maldito antes de mostrar la alerta
+            if self._game.last_round is not None:
+                self._update_round_display(self._game.last_round)
+            self._play_button.config(state=tk.DISABLED)
+            messagebox.showerror("Game Over", str(error))
+        except PasswordHunterError as error:
+            GAME_LOGGER.error("Error controlado en GUI: %s", error)
+            messagebox.showerror("Game Error", str(error))
+
+    def _update_round_display(self, round_data: Dict[str, Any]) -> None:
+        """Refresca marcador, tarjeta de cofre e historial con los datos de la ronda.
+
+        Args:
+            round_data: Diccionario con los resultados devueltos por play_round.
+        """
+        points = round_data["points_change"]
+        sign = "+" if points > 0 else ""
+
+        self._score_var.set(f"Total Score: {round_data['total_score']} pts")
+        self._lives_var.set(
+            f"Lives: {round_data['lives_left']} / {HunterGame.MAX_LIVES}"
+        )
+        self._password_var.set(
+            f"Generated Password: {round_data['password']} (Length: {round_data['length']})"
+        )
+        self._chest_var.set(f"Chest Obtained: {round_data['chest_name']}")
+        self._points_var.set(f"Chest Points: {sign}{points} pts")
+        self._status_var.set(
+            f"{round_data['chest_message']} ({round_data['validation_reason']})"
+        )
+
+        # Resaltar en rojo si es cofre maldito o en verde si es cofre positivo
+        color = "#C53030" if points < 0 else "#1E7E34"
+        self._chest_label.config(fg=color)
+
+        self._history_text.config(state=tk.NORMAL)
+        line = (
+            f"Round {round_data['round_number']:02d} | "
+            f"Pass: {round_data['password']} | "
+            f"{round_data['chest_name']} ({sign}{points} pts) | "
+            f"Score: {round_data['total_score']} | Lives: {round_data['lives_left']}\n"
+        )
+        self._history_text.insert(tk.END, line)
+        self._history_text.see(tk.END)
+        self._history_text.config(state=tk.DISABLED)
+
+    def _reset_current_game(self) -> None:
+        """Reinicia el puntaje y las 3 vidas manteniendo al jugador actual."""
+        if self._game is None:
+            return
+
+        self._game.reset_game()
+        self._score_var.set("Total Score: 0 pts")
+        self._lives_var.set(f"Lives: {HunterGame.MAX_LIVES} / {HunterGame.MAX_LIVES}")
+        self._password_var.set("Generated Password: -")
+        self._chest_var.set("Chest Obtained: -")
+        self._points_var.set("Chest Points: 0 pts")
+        self._status_var.set("Game reset! Ready for a new run.")
+        self._chest_label.config(fg="#1B365D")
+        self._play_button.config(state=tk.NORMAL)
+
+        self._history_text.config(state=tk.NORMAL)
+        self._history_text.delete("1.0", tk.END)
+        self._history_text.config(state=tk.DISABLED)
+
+    def _exit_game(self) -> None:
+        """Solicita confirmación y cierra la aplicación registrando la salida en log."""
+        if messagebox.askyesno("Quit Game", "Are you sure you want to exit Password Hunter?"):
+            GAME_LOGGER.info("Aplicación cerrada por el usuario.")
+            self._root.destroy()
+
+
+def main() -> None:
+    """Punto de entrada principal que inicia la interfaz gráfica del juego."""
+    root = tk.Tk()
+    HunterGameGUI(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
